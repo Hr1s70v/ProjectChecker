@@ -68,8 +68,7 @@ pub async fn fetch_and_display_tree(github_url: &str) -> Result<(), Box<dyn Erro
         let tree: GitTree = tree_res.json().await?;
         crate::display::print_tree(&tree.tree, 0);
 
-        // Clone repository and run Tokei
-        clone_repo(&owner, &repo).await?;
+        // Run Tokei directly
         let languages = analyze_with_tokei().await?;
         println!("Languages Used:\n{}", languages);
     } else {
@@ -87,18 +86,6 @@ fn extract_owner_repo(github_url: &str) -> Result<(String, String), Box<dyn Erro
     let owner = url_parts[url_parts.len() - 2].to_string();
     let repo = url_parts[url_parts.len() - 1].to_string();
     Ok((owner, repo))
-}
-
-async fn clone_repo(owner: &str, repo: &str) -> Result<(), Box<dyn Error>> {
-    let repo_url = format!("https://github.com/{}/{}.git", owner, repo);
-    let output = Command::new("git")
-        .args(&["clone", &repo_url])
-        .output()?;
-
-    if !output.status.success() {
-        eprintln!("Failed to clone repository: {}", str::from_utf8(&output.stderr)?);
-    }
-    Ok(())
 }
 
 async fn analyze_with_tokei() -> Result<String, Box<dyn Error>> {
