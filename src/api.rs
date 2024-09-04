@@ -138,36 +138,59 @@ async fn fetch_files(
     Ok(files)
 }
 
+
 fn detect_language(path: &str) -> String {
-    if path.ends_with(".rs") {
-        "Rust".to_string()
-    } else if path.ends_with(".js") || path.ends_with(".mjs") {
-        "JavaScript".to_string()
-    } else if path.ends_with(".ts") {
-        "TypeScript".to_string()
-    } else if path.ends_with(".css") {
-        "CSS".to_string()
-    } else if path.ends_with(".html") || path.contains("<!DOCTYPE html>") {
-        "HTML".to_string()
-    } else {
-        "Unknown".to_string()
+    let mut languages = HashMap::new();
+    languages.insert(".rs", "Rust");
+    languages.insert(".js", "JavaScript");
+    languages.insert(".mjs", "JavaScript");
+    languages.insert(".ts", "TypeScript");
+    languages.insert(".css", "CSS");
+    languages.insert(".html", "HTML");
+
+    for (ext, lang) in &languages {
+        if path.ends_with(ext) {
+            return lang.to_string();
+        }
     }
+
+    if path.contains("<!DOCTYPE html>") {
+        return "HTML".to_string();
+    }
+
+    "Unknown".to_string()
 }
 
 fn detect_framework(path: &str, content: &str) -> String {
-    if path.contains("package.json") && content.contains("next") {
-        "Next.js".to_string()
-    } else if path.contains("vue.config") {
-        "Vue.js".to_string()
-    } else if path.contains("angular.json") {
-        "Angular".to_string()
-    } else if path.contains("package.json") && content.contains("\"react\"") {
-        "React".to_string()
-    } else {
-        "None".to_string()
-    }
-}
+    let mut frameworks = HashMap::new();
+    frameworks.insert("next.config.js", "Next.js");
+    frameworks.insert("next.config.mjs", "Next.js");
+    frameworks.insert("vue.config", "Vue.js");
+    frameworks.insert("angular.json", "Angular");
 
+    // Detect based on path contents
+    for (key, framework) in &frameworks {
+        if path.contains(key) {
+            return framework.to_string();
+        }
+    }
+
+    // Additional detection for frameworks in package.json
+    let mut package_json_frameworks = HashMap::new();
+    package_json_frameworks.insert("react", "React");
+    package_json_frameworks.insert("vue", "Vue.js");
+    package_json_frameworks.insert("angular", "Angular");
+
+    if path.contains("package.json") {
+        for (key, framework) in &package_json_frameworks {
+            if content.contains(key) {
+                return framework.to_string();
+            }
+        }
+    }
+
+    "None".to_string()
+}
 fn analyze_files(files: &HashMap<String, String>) -> (HashMap<String, LanguageStats>, Option<String>) {
     let mut language_stats = HashMap::new();
     let mut framework = None;
@@ -177,26 +200,22 @@ fn analyze_files(files: &HashMap<String, String>) -> (HashMap<String, LanguageSt
         let language = detect_language(path);
         let current_framework = detect_framework(path, content);
 
+        if current_framework != "None" {
+            framework = Some(current_framework);
+        }
+
         // Check if the file indicates a website
         if path.ends_with(".html") || path.ends_with(".css") {
             has_website_files = true;
-            if framework.is_none() {
-                framework = Some(current_framework);
-            }
         }
 
         let lang_entry = language_stats.entry(language).or_insert_with(LanguageStats::new);
         lang_entry.files += 1;
     }
 
-    // Determine the message based on the detected framework
     let framework_message = if has_website_files {
         if let Some(framework) = framework {
-            if framework == "None" {
-                "This project is a static website".to_string()
-            } else {
-                format!("This project is a website made with {}", framework)
-            }
+            format!("This project is a website made with {}", framework)
         } else {
             "This project is a static website".to_string()
         }
