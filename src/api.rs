@@ -57,7 +57,7 @@ pub struct FileMappings {
 pub fn load_file_mappings() -> Result<FileMappings, Box<dyn std::error::Error>> {
     // Dynamically construct the path to 'src/extensions.json'
     let _current_dir = env::current_dir()?;
-    let path = Path::new("../extensions.json");
+    let path = Path::new("./extensions.json");
     if !path.exists() {
         println!("File does not exist at path: {:?}", path.display());
     }
@@ -177,15 +177,13 @@ async fn analyze_files(
 
 fn display_file_stats(file_stats: &HashMap<String, FileStats>, framework_message: Option<String>) {
     println!("Repository contents:");
-    println!("===============================================================================");
+    println!("--------------------------------------------------");
     
     for (file_type, stats) in file_stats {
         println!("File Type: {}", file_type);
         println!("Files: {}", stats.files);
         println!("--------------------------------------------------");
     }
-
-    println!("===============================================================================");
     
     if let Some(message) = framework_message {
         println!("{}", message);
