@@ -3,11 +3,8 @@ use serde::Deserialize;
 use std::collections::HashMap;
 use std::error::Error;
 use std::fs::File;
-use std::fs;
 use std::env;
 use std::path::Path;
-/* use std::io::BufReader;
-use serde_json::Value; */
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct GitTree {
@@ -28,11 +25,11 @@ pub struct TreeNode {
 }
 
 #[derive(Debug)]
-struct LanguageStats {
+struct FileStats {
     files: usize,
 }
 
-impl LanguageStats {
+impl FileStats {
     fn new() -> Self {
         Self { files: 0 }
     }
@@ -41,16 +38,25 @@ impl LanguageStats {
 #[derive(Deserialize)]
 struct FileTypes {
     programming_languages: HashMap<String, Vec<String>>,
+    web_files: HashMap<String, Vec<String>>,
+    config_files: HashMap<String, Vec<String>>,
+    documentation: HashMap<String, Vec<String>>,
+    images: HashMap<String, Vec<String>>,
+    video: HashMap<String, Vec<String>>,
+    audio: HashMap<String, Vec<String>>,
+    archives: HashMap<String, Vec<String>>,
+    fonts: HashMap<String, Vec<String>>,
+    other: HashMap<String, Vec<String>>,
 }
 
 #[derive(Deserialize)]
-struct FileMappings {
+pub struct FileMappings {
     file_types: FileTypes,
 }
 
 pub fn load_file_mappings() -> Result<FileMappings, Box<dyn std::error::Error>> {
     // Dynamically construct the path to 'src/extensions.json'
-    let current_dir = env::current_dir()?;
+    let _current_dir = env::current_dir()?;
     let path = Path::new("../extensions.json");
     if !path.exists() {
         println!("File does not exist at path: {:?}", path.display());
@@ -71,22 +77,32 @@ pub fn load_file_mappings() -> Result<FileMappings, Box<dyn std::error::Error>> 
     Ok(mappings)
 }
 
-async fn detect_language(path: &str, mappings: &FileMappings) -> String {
-    for (language, patterns) in &mappings.file_types.programming_languages {
-        for pattern in patterns {
-            if path.ends_with(pattern.trim_start_matches('*')) {
-                println!("Matched language: {} for file: {}", language, path);
-                return language.clone();
+async fn detect_file_type(path: &str, mappings: &FileMappings) -> String {
+    let all_types = vec![
+        &mappings.file_types.programming_languages,
+        &mappings.file_types.web_files,
+        &mappings.file_types.config_files,
+        &mappings.file_types.documentation,
+        &mappings.file_types.images,
+        &mappings.file_types.video,
+        &mappings.file_types.audio,
+        &mappings.file_types.archives,
+        &mappings.file_types.fonts,
+        &mappings.file_types.other,
+    ];
+
+    for types_map in all_types {
+        for (file_type, patterns) in types_map {
+            for pattern in patterns {
+                if path.ends_with(pattern.trim_start_matches('*')) {
+                    println!("Matched file type: {} for file: {}", file_type, path);
+                    return file_type.clone();
+                }
             }
         }
     }
 
-    // Additional HTML detection via content, if necessary
-    if path.ends_with(".html") {
-        return "HTML".to_string();
-    }
-
-    println!("Unknown language for file: {}", path);
+    println!("Unknown file type for file: {}", path);
     "Unknown".to_string()
 }
 
@@ -124,13 +140,13 @@ fn detect_framework(path: &str, content: &str) -> String {
 async fn analyze_files(
     files: &HashMap<String, String>,
     mappings: &FileMappings,
-) -> (HashMap<String, LanguageStats>, Option<String>) {
-    let mut language_stats = HashMap::new();
+) -> (HashMap<String, FileStats>, Option<String>) {
+    let mut file_stats = HashMap::new();
     let mut framework = None;
     let mut has_website_files = false;
 
     for (path, content) in files {
-        let language = detect_language(path, mappings).await;
+        let file_type = detect_file_type(path, mappings).await;
         let current_framework = detect_framework(path, content);
 
         if current_framework != "None" {
@@ -142,8 +158,8 @@ async fn analyze_files(
             has_website_files = true;
         }
 
-        let lang_entry = language_stats.entry(language).or_insert_with(LanguageStats::new);
-        lang_entry.files += 1;
+        let type_entry = file_stats.entry(file_type).or_insert_with(FileStats::new);
+        type_entry.files += 1;
     }
 
     let framework_message = if has_website_files {
@@ -156,15 +172,15 @@ async fn analyze_files(
         "No website-related files detected".to_string()
     };
 
-    (language_stats, Some(framework_message))
+    (file_stats, Some(framework_message))
 }
 
-fn display_language_stats(language_stats: &HashMap<String, LanguageStats>, framework_message: Option<String>) {
+fn display_file_stats(file_stats: &HashMap<String, FileStats>, framework_message: Option<String>) {
     println!("Repository contents:");
     println!("===============================================================================");
     
-    for (language, stats) in language_stats {
-        println!("Language: {}", language);
+    for (file_type, stats) in file_stats {
+        println!("File Type: {}", file_type);
         println!("Files: {}", stats.files);
         println!("--------------------------------------------------");
     }
@@ -265,8 +281,8 @@ pub async fn fetch_and_display_tree(github_url: &str) -> Result<(), Box<dyn Erro
 
         // Fetch file contents
         let files = fetch_files(&client, &tree.tree).await?;
-        let (language_stats, framework_message) = analyze_files(&files, &mappings).await;
-        display_language_stats(&language_stats, framework_message);
+        let (file_stats, framework_message) = analyze_files(&files, &mappings).await;
+        display_file_stats(&file_stats, framework_message);
 
     } else {
         eprintln!(
@@ -279,13 +295,46 @@ pub async fn fetch_and_display_tree(github_url: &str) -> Result<(), Box<dyn Erro
     Ok(())
 }
 
-
 fn extract_owner_repo(github_url: &str) -> Result<(String, String), Box<dyn Error>> {
-    let url_parts: Vec<&str> = github_url.trim_end_matches('/').split('/').collect();
-    if url_parts.len() < 2 {
-        return Err("Invalid GitHub URL format.".into());
+    let url_parts: Vec<&str> = github_url.split('/').collect();
+    if url_parts.len() < 5 {
+        return Err(format!("Invalid GitHub URL: {}", github_url).into());
     }
-    let owner = url_parts[url_parts.len() - 2].to_string();
-    let repo = url_parts[url_parts.len() - 1].to_string();
+    let owner = url_parts[3].to_string();
+    let repo = url_parts[4].to_string();
     Ok((owner, repo))
+}
+
+pub fn print_tree(tree: &[TreeNode], level: usize) {
+    for node in tree {
+        for _ in 0..level {
+            print!("  ");
+        }
+        println!("{}", node.path);
+        if node.r#type == "tree" {
+            // If it's a directory, recursively print its contents
+            if let Some(url) = &node.url {
+                if let Ok(sub_tree) = fetch_sub_tree(url) {
+                    print_tree(&sub_tree.tree, level + 1);
+                }
+            }
+        }
+    }
+}
+
+fn fetch_sub_tree(url: &str) -> Result<GitTree, Box<dyn Error>> {
+    let client = reqwest::blocking::Client::new();
+    let tree_res = client.get(url).header(USER_AGENT, "rust-tool").send()?;
+
+    if tree_res.status().is_success() {
+        let tree: GitTree = tree_res.json()?;
+        Ok(tree)
+    } else {
+        eprintln!(
+            "Failed to fetch the sub-tree: {} - {}",
+            tree_res.status(),
+            tree_res.text()?
+        );
+        Err("Failed to fetch the sub-tree".into())
+    }
 }
