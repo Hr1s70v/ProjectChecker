@@ -137,45 +137,114 @@ fn detect_framework(path: &str, content: &str) -> String {
     "None".to_string()
 }
 
+fn detect_project_type_and_framework(path: &str, content: &str) -> (Option<String>, Option<String>) {
+    let mut project_types = HashMap::new();
+
+    // Define indicators for different types of projects
+    project_types.insert("pom.xml", "Java Backend");
+    project_types.insert("config.ru", "Ruby Backend (Rails)");
+    project_types.insert("main.go", "Go Backend");
+    project_types.insert("index.php", "PHP Backend");
+    project_types.insert("build.gradle", "Kotlin Backend");
+    project_types.insert("build.sbt", "Scala Backend");
+
+    // Define indicators for mobile and desktop apps
+    project_types.insert("AndroidManifest.xml", "Mobile App");
+    project_types.insert("Info.plist", "Mobile App");
+    project_types.insert("MainActivity.java", "Mobile App");
+    project_types.insert("AppDelegate.swift", "Mobile App");
+    project_types.insert("electron", "Desktop App");
+    project_types.insert(".desktop", "Desktop App");
+    project_types.insert("MainWindow.xaml", "Desktop App");
+
+    // Define indicators for CLI tools
+    project_types.insert("Cargo.toml", "Rust CLI Tool");
+    project_types.insert("setup.py", "Python CLI Tool");
+    project_types.insert("Makefile", "CLI Tool");
+    project_types.insert("Program.cs", "C# CLI Tool");
+    project_types.insert("pom.xml", "Java CLI Tool");
+    project_types.insert("build.gradle", "Gradle (Java/Kotlin) CLI Tool");
+    project_types.insert("Go.mod", "Go CLI Tool");
+    project_types.insert("Rakefile", "Ruby CLI Tool");
+
+    let framework = detect_framework(path, content);
+
+    // Check if it's a website
+    if path.ends_with(".html") || path.ends_with(".css") {
+        if framework != "None" {
+            return (Some("Website".to_string()), Some(format!("Website using {}", framework)));
+        } else {
+            return (Some("Website".to_string()), Some("Static website".to_string()));
+        }
+    }
+
+    // Check for other project types
+    for (key, project_type) in &project_types {
+        if path.contains(key) || content.contains(key) {
+            return (Some(project_type.to_string()), None);
+        }
+    }
+
+    // Default to None if no project type is matched
+    (None, None)
+}
+
 async fn analyze_files(
     files: &HashMap<String, String>,
     mappings: &FileMappings,
-) -> (HashMap<String, FileStats>, Option<String>) {
+) -> (HashMap<String, FileStats>, Vec<String>) {
     let mut file_stats = HashMap::new();
-    let mut framework = None;
-    let mut has_website_files = false;
+    let mut project_types_detected = Vec::new();
 
     for (path, content) in files {
         let file_type = detect_file_type(path, mappings).await;
-        let current_framework = detect_framework(path, content);
+        let (project_type, project_type_with_framework) = detect_project_type_and_framework(path, content);
 
-        if current_framework != "None" {
-            framework = Some(current_framework);
+        // Add the detected project type and framework to the list if not already present
+        if let Some(project_type) = project_type {
+            if !project_types_detected.contains(&project_type) {
+                project_types_detected.push(project_type);
+            }
         }
 
-        // Check if the file indicates a website
-        if path.ends_with(".html") || path.ends_with(".css") {
-            has_website_files = true;
+        if let Some(project_type_with_framework) = project_type_with_framework {
+            if !project_types_detected.contains(&project_type_with_framework) {
+                project_types_detected.push(project_type_with_framework);
+            }
         }
 
+        // Update the file stats
         let type_entry = file_stats.entry(file_type).or_insert_with(FileStats::new);
         type_entry.files += 1;
     }
 
-    let framework_message = if has_website_files {
-        if let Some(framework) = framework {
-            format!("This project is a website made with {}", framework)
-        } else {
-            "This project is a static website".to_string()
-        }
-    } else {
-        "No website-related files detected".to_string()
-    };
+    (file_stats, project_types_detected)
+}
+fn detect_combined_project_type(project_types: &[String]) -> String {
+    let project_combinations = vec![
+        (vec!["Website", "Rust Backend"], "Website with Rust Backend"),
+        (vec!["Website", "Python Backend"], "Website with Python Backend"),
+        (vec!["Website", "C# Backend"], "Website with .NET Backend"),
+        (vec!["Website", "Node.js Backend"], "Website with Node.js Backend"),
+        (vec!["Website", "Java Backend"], "Website with Node.js Backend"),
+        (vec!["Website", "Ruby Backend (Rails)"], "Website with Rust Backend"),
+        (vec!["Website", "Go Backend"], "Website with Python Backend"),
+        (vec!["Website", "PHP Backend"], "Website with .NET Backend"),
+        (vec!["Website", "Kotlin Backend"], "Website with Node.js Backend"),
+        (vec!["Website", "Scala Backend"], "Website with Node.js Backend"),
+        // (vec!["Website"], "Website"),
+        (vec!["Mobile App"], "Mobile App"),
+        (vec!["Desktop App"], "Desktop App"),
+        (vec!["CLI Tool"], "CLI Tool"),
+    ];
 
-    (file_stats, Some(framework_message))
+    project_combinations.iter()
+        .find(|(types, _)| types.iter().all(|t| project_types.contains(&t.to_string())))
+        .map(|(_, description)| description.to_string())
+        .unwrap_or_else(|| "Unknown Project Type".to_string())
 }
 
-fn display_file_stats(file_stats: &HashMap<String, FileStats>, framework_message: Option<String>) {
+fn display_file_stats(file_stats: &HashMap<String, FileStats>, project_types: Vec<String>) {
     println!("Repository contents:");
     println!("--------------------------------------------------");
     
@@ -185,9 +254,8 @@ fn display_file_stats(file_stats: &HashMap<String, FileStats>, framework_message
         println!("--------------------------------------------------");
     }
     
-    if let Some(message) = framework_message {
-        println!("{}", message);
-    }
+    let combined_project_type = detect_combined_project_type(&project_types);
+    println!("Detected Project Type: {}", combined_project_type);
 }
 
 async fn fetch_files(
